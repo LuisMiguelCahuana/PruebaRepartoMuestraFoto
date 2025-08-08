@@ -96,20 +96,8 @@ def filtrar_y_generar_df(input_excel_bytes):
 
 # ---- APP STREAMLIT ----
 def main():
-    st.set_page_config(page_title="Lmc Reparto", layout="wide")  # Layout ancho
+    st.set_page_config(page_title="Lmc Reparto", layout="centered")
     st.title("🤖 Galería de Fotos SIGOF Reparto")
-
-    # CSS para que el multiselect ocupe todo el ancho
-    st.markdown(
-        """
-        <style>
-        div[data-baseweb="select"] > div {
-            width: 100% !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
 
     if "session" not in st.session_state:
         st.session_state.session = None
@@ -146,7 +134,7 @@ def main():
     # DESCARGA Y VISUALIZACIÓN
     if st.session_state.ciclos_disponibles:
         opciones = list(st.session_state.ciclos_disponibles.keys())
-        seleccionados = st.multiselect("Seleccione ciclos", options=opciones)  # Ahora ocupará todo el ancho
+        seleccionados = st.multiselect("Seleccione ciclos", options=opciones)
 
         if st.button("📷 Mostrar Fotos"):
             if not seleccionados:
@@ -175,5 +163,8 @@ def main():
             if fila["URL_Foto"]:
                 col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_container_width=True)
 
+                #col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_column_width=True)
+
 if __name__ == "__main__":
     main()
+
