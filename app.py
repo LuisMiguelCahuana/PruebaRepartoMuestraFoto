@@ -10,17 +10,11 @@ import re
 # CONFIG
 login_url = "http://sigof.distriluz.com.pe/plus/usuario/login"
 FILE_ID = "1w8QdgVmttfyf5Oe0abfTFC1ijHVj6NQtEZb8UtzJKAY"
-headers = {
-    "User-Agent": "Mozilla/5.0",
-    "Referer": login_url,
-}
+headers = {"User-Agent": "Mozilla/5.0", "Referer": login_url}
 
 # ---- FUNCIONES ----
 def login_and_get_defecto_iduunn(session, usuario, password):
-    credentials = {
-        "data[Usuario][usuario]": usuario,
-        "data[Usuario][pass]": password
-    }
+    credentials = {"data[Usuario][usuario]": usuario, "data[Usuario][pass]": password}
     login_page = session.get(login_url, headers=headers)
     soup = BeautifulSoup(login_page.text, "html.parser")
     csrf_token = soup.find("input", {"name": "_csrf_token"})
@@ -46,7 +40,7 @@ def download_excel_from_drive(file_id):
 
 def descargar_archivo(session, codigo):
     zona = ZoneInfo("America/Lima")
-    hoy = datetime.now(zona).strftime("%Y-%m-%d")    
+    hoy = datetime.now(zona).strftime("%Y-%m-%d")
     url = f"http://sigof.distriluz.com.pe/plus/ComrepOrdenrepartos/ajax_reporte_excel_ordenes_historico/U/0/{codigo}/0/0/{hoy}/{hoy}/0/"
     response = session.get(url, headers=headers)
     if response.headers.get("Content-Type") == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
@@ -55,9 +49,7 @@ def descargar_archivo(session, codigo):
         return None
 
 def filtrar_y_generar_df(input_excel_bytes):
-    """Filtra 'ver foto' y genera URLs de las fotos."""
     df = pd.read_excel(input_excel_bytes)
-
     if df.shape[1] < 26:
         st.error("❌ El archivo no tiene la columna Z (26 columnas).")
         return None
@@ -70,14 +62,8 @@ def filtrar_y_generar_df(input_excel_bytes):
         return None
 
     df_final = df_filtrado.iloc[:, :3].copy()
-
-    # Generar URLs
     H1 = "https://d3jgwc2y5nosue.cloudfront.net/repartos/"
-    J1 = "/"
-    L1 = "/"
-    N1 = "_"
-    P1 = "_"
-    R1 = ".png"
+    J1 = "/"; L1 = "/"; N1 = "_"; P1 = "_"; R1 = ".png"
 
     urls = []
     for _, row in df_final.iterrows():
@@ -96,19 +82,16 @@ def filtrar_y_generar_df(input_excel_bytes):
 
 # ---- APP STREAMLIT ----
 def main():
-    st.set_page_config(page_title="Lmc Reparto", layout="wide")  # Layout ancho
+    st.set_page_config(page_title="Lmc Reparto", layout="wide")
     st.title("🤖 Galería de Fotos SIGOF Reparto")
 
-    # CSS para que el multiselect ocupe todo el ancho
+    # CSS ancho del multiselect
     st.markdown(
         """
         <style>
-        div[data-baseweb="select"] > div {
-            width: 100% !important;
-        }
+        div[data-baseweb="select"] > div { width: 100% !important; }
         </style>
-        """,
-        unsafe_allow_html=True
+        """, unsafe_allow_html=True
     )
 
     if "session" not in st.session_state:
@@ -117,12 +100,15 @@ def main():
         st.session_state.ciclos_disponibles = {}
     if "fotos_df" not in st.session_state:
         st.session_state.fotos_df = pd.DataFrame()
+    if "pagina" not in st.session_state:
+        st.session_state.pagina = 0
+    if "lote" not in st.session_state:
+        st.session_state.lote = 50  # número de fotos por página
 
     # LOGIN
     if st.session_state.session is None:
         usuario = st.text_input("👤 Usuario SIGOF", max_chars=30)
         password = st.text_input("🔒 Contraseña SIGOF", type="password", max_chars=20)
-
         if st.button("Iniciar sesión"):
             if not usuario or not password:
                 st.warning("⚠️ Ingrese usuario y contraseña.")
@@ -143,11 +129,10 @@ def main():
                         }
                         st.success("✅ Login exitoso. Seleccione ciclos para ver fotos.")
 
-    # DESCARGA Y VISUALIZACIÓN
+    # DESCARGA
     if st.session_state.ciclos_disponibles:
         opciones = list(st.session_state.ciclos_disponibles.keys())
         seleccionados = st.multiselect("Seleccione ciclos", options=opciones)
-
         if st.button("📷 Mostrar Fotos"):
             if not seleccionados:
                 st.warning("⚠️ Seleccione al menos un ciclo.")
@@ -160,24 +145,30 @@ def main():
                         df_fotos = filtrar_y_generar_df(contenido)
                         if df_fotos is not None:
                             all_df.append(df_fotos)
-                    else:
-                        st.warning(f"⚠️ Error al descargar ciclo {codigo}")
-
                 if all_df:
                     st.session_state.fotos_df = pd.concat(all_df, ignore_index=True)
+                    st.session_state.pagina = 0  # reiniciar a la primera página
 
-    # Mostrar galería si existe
+    # GALERÍA PAGINADA
     if not st.session_state.fotos_df.empty:
-        st.subheader(f"Se encontraron {len(st.session_state.fotos_df)} fotos")
-        cols = st.columns(5)  # 5 imágenes por fila
-        for i, fila in st.session_state.fotos_df.iterrows():
+        total_fotos = len(st.session_state.fotos_df)
+        inicio = st.session_state.pagina * st.session_state.lote
+        fin = min(inicio + st.session_state.lote, total_fotos)
+        st.subheader(f"Fotos {inicio+1} - {fin} de {total_fotos}")
+
+        subset_df = st.session_state.fotos_df.iloc[inicio:fin]
+        cols = st.columns(5)
+        for i, fila in subset_df.iterrows():
             col = cols[i % 5]
             if fila["URL_Foto"]:
-                col.image(
-                    fila["URL_Foto"], 
-                    caption=f"Suministro: {fila['Suministro']}", 
-                    use_container_width=True
-                )
+                col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_container_width=True)
+
+        # Botones de navegación
+        col1, col2, col3 = st.columns(3)
+        if col1.button("⬅️ Anterior", disabled=st.session_state.pagina == 0):
+            st.session_state.pagina -= 1
+        if col3.button("Siguiente ➡️", disabled=fin >= total_fotos):
+            st.session_state.pagina += 1
 
 if __name__ == "__main__":
     main()
