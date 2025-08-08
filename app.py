@@ -157,7 +157,8 @@ def main():
         fin = min(inicio + st.session_state.lote, total_fotos)
 
         # Contador arriba
-        st.subheader(f"Fotos {inicio+1} - {fin} de {total_fotos}")
+        #st.subheader(f"Fotos {inicio+1} - {fin} de {total_fotos}")
+        st.write(f"Fotos {inicio+1} - {fin} de {total_fotos}")
 
         subset_df = st.session_state.fotos_df.iloc[inicio:fin]
         cols = st.columns(5)
@@ -182,4 +183,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
