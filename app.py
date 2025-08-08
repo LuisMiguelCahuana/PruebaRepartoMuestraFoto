@@ -161,7 +161,10 @@ def main():
         for i, fila in st.session_state.fotos_df.iterrows():
             col = cols[i % 4]
             if fila["URL_Foto"]:
-                col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_column_width=True)
+                col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_container_width=True)
+
+                #col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_column_width=True)
 
 if __name__ == "__main__":
     main()
+
