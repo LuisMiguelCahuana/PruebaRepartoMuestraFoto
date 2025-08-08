@@ -7,14 +7,15 @@ import pandas as pd
 from io import BytesIO
 import re
 
-# ---------------- CONFIG ----------------
+# CONFIG
 login_url = "http://sigof.distriluz.com.pe/plus/usuario/login"
+FILE_ID = "1w8QdgVmttfyf5Oe0abfTFC1ijHVj6NQtEZb8UtzJKAY"
 headers = {
     "User-Agent": "Mozilla/5.0",
     "Referer": login_url,
 }
 
-# ---------------- FUNCIONES ----------------
+# ---- FUNCIONES ----
 def login_and_get_defecto_iduunn(session, usuario, password):
     credentials = {
         "data[Usuario][usuario]": usuario,
@@ -38,6 +39,11 @@ def login_and_get_defecto_iduunn(session, usuario, password):
 
     return defecto_iduunn, True
 
+def download_excel_from_drive(file_id):
+    url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
+    response = requests.get(url)
+    return pd.read_excel(BytesIO(response.content)) if response.status_code == 200 else None
+
 def descargar_archivo(session, codigo):
     zona = ZoneInfo("America/Lima")
     hoy = datetime.now(zona).strftime("%Y-%m-%d")    
@@ -48,97 +54,114 @@ def descargar_archivo(session, codigo):
     else:
         return None
 
-def procesar_excel(input_excel_bytes):
+def filtrar_y_generar_df(input_excel_bytes):
+    """Filtra 'ver foto' y genera URLs de las fotos."""
     df = pd.read_excel(input_excel_bytes)
 
-    # Ajusta los nombres exactos según tu archivo real
-    columnas_necesarias = ["Ciclo", "Sector", "Ruta", "Lecturista", "URL_Foto", "Suministro"]
-    for col in columnas_necesarias:
-        if col not in df.columns:
-            st.error(f"❌ Falta la columna '{col}' en el Excel.")
-            return None
+    if df.shape[1] < 26:
+        st.error("❌ El archivo no tiene la columna Z (26 columnas).")
+        return None
 
-    # Elimina filas sin URL válida
-    df = df[df["URL_Foto"].notna() & (df["URL_Foto"].str.startswith("http"))]
-    return df
+    col_foto = df.columns[25]
+    df_filtrado = df[df[col_foto] == "ver foto"]
 
-# ---------------- STREAMLIT APP ----------------
-st.set_page_config(page_title="Galería de Suministros", layout="centered")
-st.title("📸 Galería de Fotos de Suministros - SIGOF")
+    if df_filtrado.empty:
+        st.warning("⚠️ No se encontraron filas con 'ver foto'.")
+        return None
 
-if "session" not in st.session_state:
-    st.session_state.session = None
-if "df_fotos" not in st.session_state:
-    st.session_state.df_fotos = pd.DataFrame()
+    df_final = df_filtrado.iloc[:, :3].copy()
 
-# --- LOGIN ---
-if st.session_state.session is None:
-    usuario = st.text_input("👤 Usuario SIGOF", max_chars=30)
-    password = st.text_input("🔒 Contraseña SIGOF", type="password", max_chars=20)
+    # Generar URLs
+    H1 = "https://d3jgwc2y5nosue.cloudfront.net/repartos/"
+    J1 = "/"
+    L1 = "/"
+    N1 = "_"
+    P1 = "_"
+    R1 = ".png"
 
-    if st.button("Iniciar sesión"):
-        if not usuario or not password:
-            st.warning("⚠️ Ingrese usuario y contraseña.")
+    urls = []
+    for _, row in df_final.iterrows():
+        col_a = str(row.iloc[0])
+        col_b = str(row.iloc[1])
+        col_c = str(row.iloc[2])
+        if col_b.strip():
+            primeros_dos = col_a[:2]
+            url = f"{H1}{col_b}{J1}{primeros_dos}{L1}{col_b}{N1}{primeros_dos}{P1}{col_c}{R1}"
+            urls.append(url)
         else:
-            session = requests.Session()
-            _, login_ok = login_and_get_defecto_iduunn(session, usuario, password)
-            if not login_ok:
-                st.error("❌ Usuario o contraseña incorrectos.")
+            urls.append("")
+    df_final["URL_Foto"] = urls
+    df_final.rename(columns={df_final.columns[0]: "Ciclo", df_final.columns[1]: "Sector", df_final.columns[2]: "Suministro"}, inplace=True)
+    return df_final
+
+# ---- APP STREAMLIT ----
+def main():
+    st.set_page_config(page_title="Lmc Reparto", layout="centered")
+    st.title("🤖 Galería de Fotos SIGOF Reparto")
+
+    if "session" not in st.session_state:
+        st.session_state.session = None
+    if "ciclos_disponibles" not in st.session_state:
+        st.session_state.ciclos_disponibles = {}
+    if "fotos_df" not in st.session_state:
+        st.session_state.fotos_df = pd.DataFrame()
+
+    # LOGIN
+    if st.session_state.session is None:
+        usuario = st.text_input("👤 Usuario SIGOF", max_chars=30)
+        password = st.text_input("🔒 Contraseña SIGOF", type="password", max_chars=20)
+
+        if st.button("Iniciar sesión"):
+            if not usuario or not password:
+                st.warning("⚠️ Ingrese usuario y contraseña.")
             else:
-                st.session_state.session = session
-                st.success("✅ Login exitoso. Ahora seleccione un ciclo para ver fotos.")
+                session = requests.Session()
+                defecto_iduunn, login_ok = login_and_get_defecto_iduunn(session, usuario, password)
+                if not login_ok:
+                    st.error("❌ Login fallido.")
+                else:
+                    st.session_state.session = session
+                    df_ciclos = download_excel_from_drive(FILE_ID)
+                    if df_ciclos is not None:
+                        df_ciclos['id_unidad'] = pd.to_numeric(df_ciclos['id_unidad'], errors='coerce').fillna(-1).astype(int)
+                        df_ciclos = df_ciclos[df_ciclos['id_unidad'] == defecto_iduunn]
+                        st.session_state.ciclos_disponibles = {
+                            f"{row['Id_ciclo']} {row['nombre_ciclo']}": str(row['Id_ciclo'])
+                            for _, row in df_ciclos.iterrows()
+                        }
+                        st.success("✅ Login exitoso. Seleccione ciclos para ver fotos.")
 
-# --- DESCARGA Y VISUALIZACIÓN ---
-if st.session_state.session:
-    ciclo_codigo = st.text_input("Ingrese el código del Ciclo:")
-    if st.button("📥 Cargar fotos del ciclo"):
-        if ciclo_codigo:
-            contenido = descargar_archivo(st.session_state.session, ciclo_codigo)
-            if contenido:
-                df = procesar_excel(contenido)
-                if df is not None:
-                    st.session_state.df_fotos = df
-                    st.success(f"✅ Se cargaron {len(df)} fotos.")
+    # DESCARGA Y VISUALIZACIÓN
+    if st.session_state.ciclos_disponibles:
+        opciones = list(st.session_state.ciclos_disponibles.keys())
+        seleccionados = st.multiselect("Seleccione ciclos", options=opciones)
+
+        if st.button("📷 Mostrar Fotos"):
+            if not seleccionados:
+                st.warning("⚠️ Seleccione al menos un ciclo.")
             else:
-                st.error("⚠️ No se pudo descargar el archivo.")
-        else:
-            st.warning("⚠️ Ingrese el código del ciclo.")
+                all_df = []
+                for nombre in seleccionados:
+                    codigo = st.session_state.ciclos_disponibles[nombre]
+                    contenido = descargar_archivo(st.session_state.session, codigo)
+                    if contenido:
+                        df_fotos = filtrar_y_generar_df(contenido)
+                        if df_fotos is not None:
+                            all_df.append(df_fotos)
+                    else:
+                        st.warning(f"⚠️ Error al descargar ciclo {codigo}")
 
-# --- FILTROS Y GALERÍA ---
-if not st.session_state.df_fotos.empty:
-    df = st.session_state.df_fotos
+                if all_df:
+                    st.session_state.fotos_df = pd.concat(all_df, ignore_index=True)
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        filtro_ciclo = st.selectbox("Ciclo", ["Todos"] + sorted(df["Ciclo"].unique()))
-    with col2:
-        filtro_sector = st.selectbox("Sector", ["Todos"] + sorted(df["Sector"].unique()))
-    with col3:
-        filtro_ruta = st.selectbox("Ruta", ["Todos"] + sorted(df["Ruta"].unique()))
-    with col4:
-        filtro_lecturista = st.selectbox("Lecturista", ["Todos"] + sorted(df["Lecturista"].unique()))
+    # Mostrar galería si existe
+    if not st.session_state.fotos_df.empty:
+        st.subheader(f"Se encontraron {len(st.session_state.fotos_df)} fotos")
+        cols = st.columns(4)  # 4 imágenes por fila
+        for i, fila in st.session_state.fotos_df.iterrows():
+            col = cols[i % 4]
+            if fila["URL_Foto"]:
+                col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_column_width=True)
 
-    df_filtrado = df.copy()
-    if filtro_ciclo != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["Ciclo"] == filtro_ciclo]
-    if filtro_sector != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["Sector"] == filtro_sector]
-    if filtro_ruta != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["Ruta"] == filtro_ruta]
-    if filtro_lecturista != "Todos":
-        df_filtrado = df_filtrado[df_filtrado["Lecturista"] == filtro_lecturista]
-
-    st.markdown(f"### Se encontraron {len(df_filtrado)} fotos 📷")
-
-    for _, row in df_filtrado.iterrows():
-        st.markdown(
-            f"""
-            <div style='text-align: center; margin-bottom: 15px;'>
-                <img src="{row['URL_Foto']}" style='width: 250px; border-radius: 10px;'><br>
-                <div style='font-weight: bold; font-size: 14px; margin-top: 5px; color: #007BFF;'>
-                    Suministro: {row['Suministro']}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+if __name__ == "__main__":
+    main()
