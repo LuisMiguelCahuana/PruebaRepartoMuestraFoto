@@ -150,10 +150,13 @@ def main():
                     st.session_state.pagina = 0  # reiniciar a la primera página
 
     # GALERÍA PAGINADA
+    # GALERÍA PAGINADA
     if not st.session_state.fotos_df.empty:
         total_fotos = len(st.session_state.fotos_df)
         inicio = st.session_state.pagina * st.session_state.lote
         fin = min(inicio + st.session_state.lote, total_fotos)
+
+        # Contador arriba
         st.subheader(f"Fotos {inicio+1} - {fin} de {total_fotos}")
 
         subset_df = st.session_state.fotos_df.iloc[inicio:fin]
@@ -161,7 +164,14 @@ def main():
         for i, fila in subset_df.iterrows():
             col = cols[i % 5]
             if fila["URL_Foto"]:
-                col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_container_width=True)
+                col.image(
+                    fila["URL_Foto"],
+                    caption=f"Suministro: {fila['Suministro']}",
+                    use_container_width=True
+                )
+
+        # Contador abajo
+        st.write(f"Fotos {inicio+1} - {fin} de {total_fotos}")
 
         # Botones de navegación
         col1, col2, col3 = st.columns(3)
@@ -172,3 +182,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
