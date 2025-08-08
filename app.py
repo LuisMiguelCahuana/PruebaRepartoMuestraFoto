@@ -54,8 +54,8 @@ def descargar_archivo(session, codigo):
     else:
         return None
 
-def filtrar_y_concatenar(input_excel_bytes):
-    """Filtra 'ver foto' y genera URLs en columna D"""
+def procesar_y_generar_urls(input_excel_bytes):
+    """Filtra 'ver foto' y agrega URL_Foto y Suministro"""
     df = pd.read_excel(input_excel_bytes)
 
     if df.shape[1] < 26:
@@ -69,9 +69,9 @@ def filtrar_y_concatenar(input_excel_bytes):
         st.warning("⚠️ No se encontraron filas con 'ver foto'.")
         return None
 
-    df_final = df_filtrado.iloc[:, :3].copy()
+    df_final = df_filtrado.copy()
 
-    # Generar URLs (columna D)
+    # Generar URLs
     H1 = "https://d3jgwc2y5nosue.cloudfront.net/repartos/"
     J1 = "/"
     L1 = "/"
@@ -90,24 +90,22 @@ def filtrar_y_concatenar(input_excel_bytes):
             urls.append(url)
         else:
             urls.append("")
-    df_final["D"] = urls
+    df_final["URL_Foto"] = urls
+    df_final.rename(columns={df_final.columns[1]: "Suministro"}, inplace=True)
 
-    output = BytesIO()
-    df_final.to_excel(output, index=False)
-    output.seek(0)
-    return output
+    return df_final
 
 # ---- APP STREAMLIT ----
 def main():
-    st.set_page_config(page_title="Lmc Reparto", layout="centered")
-    st.title("🤖 Descarga y Filtrado Automático SIGOF Reparto")
+    st.set_page_config(page_title="Lmc Reparto", layout="wide")
+    st.title("📷 Visor de Fotos de Reparto")
 
     if "session" not in st.session_state:
         st.session_state.session = None
     if "ciclos_disponibles" not in st.session_state:
         st.session_state.ciclos_disponibles = {}
-    if "archivos_descargados" not in st.session_state:
-        st.session_state.archivos_descargados = {}
+    if "data_fotos" not in st.session_state:
+        st.session_state.data_fotos = pd.DataFrame()
 
     # LOGIN
     if st.session_state.session is None:
@@ -132,38 +130,53 @@ def main():
                             f"{row['Id_ciclo']} {row['nombre_ciclo']}": str(row['Id_ciclo'])
                             for _, row in df_ciclos.iterrows()
                         }
-                        st.success("✅ Login exitoso. Seleccione ciclos para descargar.")
+                        st.success("✅ Login exitoso. Seleccione ciclos para ver fotos.")
 
-    # DESCARGA
+    # DESCARGA Y PROCESO
     if st.session_state.ciclos_disponibles:
         opciones = list(st.session_state.ciclos_disponibles.keys())
         seleccionados = st.multiselect("Seleccione ciclos", options=opciones)
 
-        if st.button("📥 Descargar y Filtrar"):
+        if st.button("📥 Cargar Fotos"):
             if not seleccionados:
                 st.warning("⚠️ Seleccione al menos un ciclo.")
             else:
-                st.session_state.archivos_descargados.clear()
+                lista_df = []
                 for nombre in seleccionados:
                     codigo = st.session_state.ciclos_disponibles[nombre]
                     contenido = descargar_archivo(st.session_state.session, codigo)
                     if contenido:
-                        archivo_final = filtrar_y_concatenar(contenido)
-                        if archivo_final:
-                            filename = f"{nombre}_SoloFotos.xlsx"
-                            st.session_state.archivos_descargados[filename] = archivo_final
-                    else:
-                        st.warning(f"⚠️ Error al descargar ciclo {codigo}")
+                        df_fotos = procesar_y_generar_urls(contenido)
+                        if df_fotos is not None:
+                            lista_df.append(df_fotos)
+                if lista_df:
+                    st.session_state.data_fotos = pd.concat(lista_df, ignore_index=True)
 
-    if st.session_state.archivos_descargados:
-        st.subheader("✅ Archivos listos para descargar:")
-        for filename, contenido in st.session_state.archivos_descargados.items():
-            st.download_button(
-                label=f"⬇️ Descargar {filename}",
-                data=contenido,
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+    # FILTROS Y VISUALIZACIÓN
+    if not st.session_state.data_fotos.empty:
+        df = st.session_state.data_fotos
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            ciclo_f = st.multiselect("Ciclo", sorted(df["Ciclo"].dropna().unique()))
+        with col2:
+            sector_f = st.multiselect("Sector", sorted(df["Sector"].dropna().unique()))
+        with col3:
+            ruta_f = st.multiselect("Ruta", sorted(df["Ruta"].dropna().unique()))
+        with col4:
+            lecturista_f = st.multiselect("Lecturista", sorted(df["Lecturista"].dropna().unique()))
+
+        if ciclo_f:
+            df = df[df["Ciclo"].isin(ciclo_f)]
+        if sector_f:
+            df = df[df["Sector"].isin(sector_f)]
+        if ruta_f:
+            df = df[df["Ruta"].isin(ruta_f)]
+        if lecturista_f:
+            df = df[df["Lecturista"].isin(lecturista_f)]
+
+        # Mostrar imágenes
+        for _, row in df.iterrows():
+            st.image(row["URL_Foto"], caption=f"Suministro: {row['Suministro']}", use_container_width=True)
 
 if __name__ == "__main__":
     main()
