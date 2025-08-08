@@ -9,7 +9,7 @@ import re
 
 # CONFIG
 login_url = "http://sigof.distriluz.com.pe/plus/usuario/login"
-FILE_ID = "1w8QdgVmttfyf5Oe0abfTFC1ijHVj6NQtEZb8UtzJKAY"
+FILE_ID = "1w8QdgVmttfyf5Oe0abfTFC1ijHVj6NQtEZb8UtzJKAY"  # ID del Excel en Google Drive
 headers = {
     "User-Agent": "Mozilla/5.0",
     "Referer": login_url,
@@ -91,7 +91,11 @@ def filtrar_y_generar_df(input_excel_bytes):
         else:
             urls.append("")
     df_final["URL_Foto"] = urls
-    df_final.rename(columns={df_final.columns[0]: "Ciclo", df_final.columns[1]: "Sector", df_final.columns[2]: "Suministro"}, inplace=True)
+    df_final.rename(columns={
+        df_final.columns[0]: "Ciclo",
+        df_final.columns[1]: "Sector",
+        df_final.columns[2]: "Suministro"
+    }, inplace=True)
     return df_final
 
 # ---- APP STREAMLIT ----
@@ -101,8 +105,8 @@ def main():
 
     if "session" not in st.session_state:
         st.session_state.session = None
-    if "ciclos_disponibles" not in st.session_state:
-        st.session_state.ciclos_disponibles = {}
+    if "ciclos_df" not in st.session_state:
+        st.session_state.ciclos_df = pd.DataFrame()
     if "fotos_df" not in st.session_state:
         st.session_state.fotos_df = pd.DataFrame()
 
@@ -120,39 +124,41 @@ def main():
                 if not login_ok:
                     st.error("❌ Login fallido.")
                 else:
-                    st.session_state.session = session
                     df_ciclos = download_excel_from_drive(FILE_ID)
                     if df_ciclos is not None:
+                        # Filtrar por unidad detectada en login
                         df_ciclos['id_unidad'] = pd.to_numeric(df_ciclos['id_unidad'], errors='coerce').fillna(-1).astype(int)
                         df_ciclos = df_ciclos[df_ciclos['id_unidad'] == defecto_iduunn]
-                        st.session_state.ciclos_disponibles = {
-                            f"{row['Id_ciclo']} {row['nombre_ciclo']}": str(row['Id_ciclo'])
-                            for _, row in df_ciclos.iterrows()
-                        }
-                        st.success("✅ Login exitoso. Seleccione ciclos para ver fotos.")
+                        st.session_state.ciclos_df = df_ciclos
+                        st.session_state.session = session
+                        st.success("✅ Login exitoso. Ahora seleccione ciclo y sector.")
 
-    # DESCARGA Y VISUALIZACIÓN
-    if st.session_state.ciclos_disponibles:
-        opciones = list(st.session_state.ciclos_disponibles.keys())
-        seleccionados = st.multiselect("Seleccione ciclos", options=opciones)
+    # FILTRO CICLO → SECTOR
+    if not st.session_state.ciclos_df.empty:
+        ciclos_unicos = sorted(st.session_state.ciclos_df['Id_ciclo'].unique().tolist())
+        ciclo_seleccionado = st.selectbox("Seleccione ciclo", options=ciclos_unicos)
 
-        if st.button("📷 Mostrar Fotos"):
-            if not seleccionados:
-                st.warning("⚠️ Seleccione al menos un ciclo.")
-            else:
-                all_df = []
-                for nombre in seleccionados:
-                    codigo = st.session_state.ciclos_disponibles[nombre]
-                    contenido = descargar_archivo(st.session_state.session, codigo)
+        if ciclo_seleccionado:
+            df_filtrado_ciclo = st.session_state.ciclos_df[st.session_state.ciclos_df['Id_ciclo'] == ciclo_seleccionado]
+            sectores_unicos = sorted(df_filtrado_ciclo['sector'].dropna().unique().tolist())
+            sectores_seleccionados = st.multiselect("Seleccione sectores", options=sectores_unicos)
+
+            if st.button("📷 Mostrar Fotos"):
+                if not sectores_seleccionados:
+                    st.warning("⚠️ Seleccione al menos un sector.")
+                else:
+                    all_df = []
+                    contenido = descargar_archivo(st.session_state.session, ciclo_seleccionado)
                     if contenido:
                         df_fotos = filtrar_y_generar_df(contenido)
                         if df_fotos is not None:
+                            df_fotos = df_fotos[df_fotos['Sector'].isin(sectores_seleccionados)]
                             all_df.append(df_fotos)
                     else:
-                        st.warning(f"⚠️ Error al descargar ciclo {codigo}")
+                        st.warning(f"⚠️ Error al descargar ciclo {ciclo_seleccionado}")
 
-                if all_df:
-                    st.session_state.fotos_df = pd.concat(all_df, ignore_index=True)
+                    if all_df:
+                        st.session_state.fotos_df = pd.concat(all_df, ignore_index=True)
 
     # Mostrar galería si existe
     if not st.session_state.fotos_df.empty:
@@ -163,8 +169,5 @@ def main():
             if fila["URL_Foto"]:
                 col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_container_width=True)
 
-                #col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_column_width=True)
-
 if __name__ == "__main__":
     main()
-
