@@ -96,8 +96,20 @@ def filtrar_y_generar_df(input_excel_bytes):
 
 # ---- APP STREAMLIT ----
 def main():
-    st.set_page_config(page_title="Lmc Reparto", layout="centered")
+    st.set_page_config(page_title="Lmc Reparto", layout="wide")  # Layout ancho
     st.title("🤖 Galería de Fotos SIGOF Reparto")
+
+    # CSS para que el multiselect ocupe todo el ancho
+    st.markdown(
+        """
+        <style>
+        div[data-baseweb="select"] > div {
+            width: 100% !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
     if "session" not in st.session_state:
         st.session_state.session = None
@@ -157,14 +169,15 @@ def main():
     # Mostrar galería si existe
     if not st.session_state.fotos_df.empty:
         st.subheader(f"Se encontraron {len(st.session_state.fotos_df)} fotos")
-        cols = st.columns(4)  # 4 imágenes por fila
+        cols = st.columns(5)  # 5 imágenes por fila
         for i, fila in st.session_state.fotos_df.iterrows():
-            col = cols[i % 4]
+            col = cols[i % 5]
             if fila["URL_Foto"]:
-                col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_container_width=True)
-
-                #col.image(fila["URL_Foto"], caption=f"Suministro: {fila['Suministro']}", use_column_width=True)
+                col.image(
+                    fila["URL_Foto"], 
+                    caption=f"Suministro: {fila['Suministro']}", 
+                    use_container_width=True
+                )
 
 if __name__ == "__main__":
     main()
-
