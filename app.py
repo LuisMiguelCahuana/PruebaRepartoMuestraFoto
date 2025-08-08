@@ -135,33 +135,45 @@ def main():
                         st.session_state.session = session
                         st.success("✅ Login exitoso. Ahora seleccione ciclo y sector.")
 
-    # FILTRO CICLO → SECTOR (manteniendo nombre completo)
+    # FILTRO CICLOS → SECTORES (multiselect con selección múltiple y todos seleccionados por defecto)
     if not st.session_state.ciclos_df.empty:
         ciclos_dict = {
             f"{row['Id_ciclo']} {row['nombre_ciclo']}": row['Id_ciclo']
             for _, row in st.session_state.ciclos_df.iterrows()
         }
-        ciclo_nombre = st.selectbox("Seleccione ciclo", options=list(ciclos_dict.keys()))
 
-        if ciclo_nombre:
-            ciclo_id = ciclos_dict[ciclo_nombre]
-            df_filtrado_ciclo = st.session_state.ciclos_df[st.session_state.ciclos_df['Id_ciclo'] == ciclo_id]
-            sectores_unicos = sorted(df_filtrado_ciclo['sector'].dropna().unique().tolist())
-            sectores_seleccionados = st.multiselect("Seleccione sectores", options=sectores_unicos)
+        ciclos_seleccionados = st.multiselect(
+            "Seleccione uno o más ciclos",
+            options=list(ciclos_dict.keys()),
+            default=list(ciclos_dict.keys())  # Por defecto todos seleccionados
+        )
+
+        if ciclos_seleccionados:
+            ciclos_ids = [ciclos_dict[c] for c in ciclos_seleccionados]
+            df_filtrado_ciclos = st.session_state.ciclos_df[st.session_state.ciclos_df['Id_ciclo'].isin(ciclos_ids)]
+
+            sectores_unicos = sorted(df_filtrado_ciclos['sector'].dropna().unique().tolist())
+
+            sectores_seleccionados = st.multiselect(
+                "Seleccione sectores",
+                options=sectores_unicos,
+                default=sectores_unicos  # Todos seleccionados por defecto
+            )
 
             if st.button("📷 Mostrar Fotos"):
                 if not sectores_seleccionados:
                     st.warning("⚠️ Seleccione al menos un sector.")
                 else:
                     all_df = []
-                    contenido = descargar_archivo(st.session_state.session, ciclo_id)
-                    if contenido:
-                        df_fotos = filtrar_y_generar_df(contenido)
-                        if df_fotos is not None:
-                            df_fotos = df_fotos[df_fotos['Sector'].isin(sectores_seleccionados)]
-                            all_df.append(df_fotos)
-                    else:
-                        st.warning(f"⚠️ Error al descargar ciclo {ciclo_id}")
+                    for ciclo_id in ciclos_ids:
+                        contenido = descargar_archivo(st.session_state.session, ciclo_id)
+                        if contenido:
+                            df_fotos = filtrar_y_generar_df(contenido)
+                            if df_fotos is not None:
+                                df_fotos = df_fotos[df_fotos['Sector'].isin(sectores_seleccionados)]
+                                all_df.append(df_fotos)
+                        else:
+                            st.warning(f"⚠️ Error al descargar ciclo {ciclo_id}")
 
                     if all_df:
                         st.session_state.fotos_df = pd.concat(all_df, ignore_index=True)
